@@ -7,6 +7,26 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
+var (
+	// DescriptionKind is the default StringKind of descriptions in this provider.
+	// It defaults to StringPlain but can be globally switched to StringMarkdown.
+	DescriptionKind = configschema.StringPlain
+
+	// SchemaDescriptionBuilder converts helper/schema.Schema Descriptions to configschema.Attribute
+	// and Block Descriptions. This method can be used to modify the description text prior to it
+	// being returned in the schema.
+	SchemaDescriptionBuilder = func(s *Schema) string {
+		return s.Description
+	}
+
+	// ResourceDescriptionBuilder converts helper/schema.Resource Descriptions to configschema.Block
+	// Descriptions at the resource top level. This method can be used to modify the description prior
+	// to it being returned in the schema.
+	ResourceDescriptionBuilder = func(r *Resource) string {
+		return r.Description
+	}
+)
+
 // The functions and methods in this file are concerned with the conversion
 // of this package's schema model into the slightly-lower-level schema model
 // used by Terraform core for configuration parsing.
@@ -116,12 +136,14 @@ func (s *Schema) coreConfigSchemaAttribute() *configschema.Attribute {
 	}
 
 	return &configschema.Attribute{
-		Type:        s.coreConfigSchemaType(),
-		Optional:    opt,
-		Required:    reqd,
-		Computed:    s.Computed,
-		Sensitive:   s.Sensitive,
-		Description: s.Description,
+		Type:            s.coreConfigSchemaType(),
+		Optional:        opt,
+		Required:        reqd,
+		Computed:        s.Computed,
+		Sensitive:       s.Sensitive,
+		Description:     SchemaDescriptionBuilder(s),
+		DescriptionKind: DescriptionKind,
+		Deprecated:      s.Deprecated != "",
 	}
 }
 
@@ -132,6 +154,10 @@ func (s *Schema) coreConfigSchemaBlock() *configschema.NestedBlock {
 	ret := &configschema.NestedBlock{}
 	if nested := s.Elem.(*Resource).coreConfigSchema(); nested != nil {
 		ret.Block = *nested
+		// set these on the block from the attribute Schema
+		ret.Block.Description = SchemaDescriptionBuilder(s)
+		ret.Block.DescriptionKind = DescriptionKind
+		ret.Block.Deprecated = s.Deprecated != ""
 	}
 	switch s.Type {
 	case TypeList:
@@ -230,6 +256,11 @@ func (s *Schema) coreConfigSchemaType() cty.Type {
 // attribute for top level resources if it doesn't exist.
 func (r *Resource) CoreConfigSchema() *configschema.Block {
 	block := r.coreConfigSchema()
+
+	// Only apply Resource Description, Kind, Deprecation at top level
+	block.Description = ResourceDescriptionBuilder(r)
+	block.DescriptionKind = DescriptionKind
+	block.Deprecated = r.DeprecationMessage != ""
 
 	if block.Attributes == nil {
 		block.Attributes = map[string]*configschema.Attribute{}
