@@ -5,6 +5,7 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	grpcplugin "github.com/hashicorp/terraform-plugin-sdk/v2/internal/helper/plugin"
@@ -61,10 +62,12 @@ func Serve(opts *ServeOpts) {
 			},
 		},
 		GRPCServer: func(opts []grpc.ServerOption) *grpc.Server {
-			return grpc.NewServer(append(opts, grpc.UnaryInterceptor(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+			s := grpc.NewServer(append(opts, grpc.UnaryInterceptor(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 				ctx = provider.(*grpcplugin.GRPCProviderServer).StopContext(ctx)
 				return handler(ctx, req)
 			}))...)
+			reflection.Register(s)
+			return s
 		},
 	})
 }
